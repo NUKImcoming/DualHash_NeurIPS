@@ -9,12 +9,12 @@ import lr_schedule
 from tqdm import tqdm
 import math
 from torch.utils.tensorboard import SummaryWriter
-from storm import STORM  # 导入STORM优化器
+from storm import STORM 
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # seed
 seed = 2024 
-torch.manual_seed(seed) # CPU环境下的种子
+torch.manual_seed(seed) 
 if torch.cuda.is_available():
     torch.manual_seed(seed)
     
@@ -121,8 +121,8 @@ def get_config(dataset_choice="cifar-10"):
         },
         
         # hardware parameters
-        # "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-        "device": torch.device("mps"), 
+        "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+        # "device": torch.device("mps"), 
         # hash bit number
         "bit_list": [64,48,32,16]
     }
