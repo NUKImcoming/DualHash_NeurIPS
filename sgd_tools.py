@@ -189,7 +189,7 @@ def nus_wide_dataset(config):
         print("WARNING: NUS-WIDE dataset images not found!")
         print("The code will attempt to run but will fail when trying to load images.")
         print("\nTo use the NUS-WIDE dataset, please:")
-        print("1. Download the dataset from: https://lms.comp.nus.edu.sg/wp-content/uploads/2019/research/nuswide/NUS-WIDE.html")
+        print('1. Download the dataset from: "https://pan.baidu.com/s/1f9mKXE2T8XpIq8p7y8Fa6Q"')
         print("2. Extract images to: data/nus-wide/images/")
         print("3. Ensure image paths in txt files match your directory structure")
         print("="*80 + "\n")

@@ -3,20 +3,20 @@ from torch.optim.optimizer import Optimizer
 import math
 
 class STORM(Optimizer):
-    """STOchastic Recursive Momentum优化器
+    """STOchastic Recursive Momentum optimizer
     
-    参数:
-        params (iterable): 可训练参数或参数组
-        lr (float): 初始学习率 (默认: 0.1)
-        momentum (float): 动量因子 (默认: 0.9)
-        weight_decay (float): 权重衰减 (默认: 0)
-        c (float): 递归动量控制参数 (默认: 0.1)
-        nesterov (bool): 是否使用Nesterov动量 (默认: False)
-        use_constant_c (bool): 是否使用常数c_t (默认: False)
+    Args:
+        params (iterable): Trainable parameters or parameter groups
+        lr (float): Initial learning rate (default: 0.1)
+        momentum (float): Momentum factor (default: 0.9)
+        weight_decay (float): Weight decay (default: 0)
+        c (float): Recursive momentum control parameter (default: 0.1)
+        nesterov (bool): Whether to use Nesterov momentum (default: False)
+        use_constant_c (bool): Whether to use constant c_t (default: False)
     """
     
     def __init__(self, params, lr=0.1, momentum=0.9, weight_decay=0, c=0.1, nesterov=False, use_constant_c=True):
-        # 初始化计数
+        # Initialize counter
         self.step_count = 0
         self.use_constant_c = use_constant_c
         
@@ -33,27 +33,27 @@ class STORM(Optimizer):
                         c=c, nesterov=nesterov, use_constant_c=use_constant_c)
         super(STORM, self).__init__(params, defaults)
         
-        # 初始化状态
+        # Initialize state
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
                 state['step'] = 0
-                state['momentum_buffer'] = torch.zeros_like(p.data)  # 递归动量
-                state['prev_grad'] = torch.zeros_like(p.data)  # 上一步梯度
+                state['momentum_buffer'] = torch.zeros_like(p.data)  # Recursive momentum
+                state['prev_grad'] = torch.zeros_like(p.data)  # Previous step gradient
     
     @torch.no_grad()
     def step(self, closure=None):
-        """执行单步优化
+        """Perform a single optimization step
         
-        参数:
-            closure (callable, optional): 重新评估模型并返回损失的闭包
+        Args:
+            closure (callable, optional): A closure that reevaluates the model and returns the loss
         """
         loss = None
         if closure is not None:
             with torch.enable_grad():
                 loss = closure()
         
-        # 更新全局步数
+        # Update global step count
         self.step_count += 1
         
         for group in self.param_groups:
@@ -76,28 +76,28 @@ class STORM(Optimizer):
                 state = self.state[p]
                 state['step'] += 1
                 
-                # 获取上一步的状态
+                # Get previous step state
                 prev_momentum = state['momentum_buffer']
                 prev_grad = state['prev_grad']
                 
-                # 选择使用常数c_t还是衰减c_t
+                # Choose between constant c_t or decaying c_t
                 if use_constant_c:
-                    # 使用常数c_t
+                    # Use constant c_t
                     c_t = c
                 else:
-                    # 使用衰减c_t
+                    # Use decaying c_t
                     epsilon = 1e-6 
                     c_t = c / math.sqrt(self.step_count + epsilon)
                 
-                # STORM递归动量更新
+                # STORM recursive momentum update
                 # d_t = (1-c_t) * d_{t-1} + g_t - (1-c_t) * g_{t-1}
                 new_momentum = (1-c_t) * prev_momentum + grad - (1-c_t) * prev_grad
                 
-                # 保存当前梯度用于下一步
+                # Save current gradient for next step
                 state['prev_grad'] = grad.clone()
                 state['momentum_buffer'] = new_momentum
                 
-                # 标准STORM更新 (无Nesterov加速)
+                # Standard STORM update (without Nesterov acceleration)
                 p.data.add_(new_momentum, alpha=-lr)
         
         return loss

@@ -239,9 +239,8 @@ def train_val(config, bit):
             optimizer.zero_grad()
             u = net(image)
             U[:, ind] = u.t().data
-            loss, quan_loss = criterion(u, label.float(), ind, B, config)
+            loss = criterion(u, label.float(), ind, B, config)
             train_loss += loss.item()
-            train_quan_loss += quan_loss.item()
             loss.backward() 
             optimizer.step()
             U[:, ind] = net(image).t().data

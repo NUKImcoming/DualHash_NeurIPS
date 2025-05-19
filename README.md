@@ -34,3 +34,24 @@ or
 ```python
 python DualHash.py --dataset nus-wide
 ```
+
+## EXPERIMENTS
+CNN model: Alexnet. Compute mean average precision(MAP).
+
+cifar10: 10 classes, 5000 query images, 10000 training images.
+
+nus-wide-tc21: 21 classes, 6300 query images, 14700 training images.
+
+### DualHash-StoM
+
+| bits | 16 | 32 | 48 | 64 |
+| :---: | :---: | :---: | :---: | :---: |
+| cifar10@ALL | 0.8215 | 0.8481 | 0.8534 | 0.8539 |
+| nus-wide@5000 | 0.6339 | 0.7002 | 0.7248 | 0.7448 |
+
+### DualHash-StoRM
+| bits | 16 | 32 | 48 | 64 |
+| :---: | :---: | :---: | :---: | :---: |
+| cifar10@ALL | 0.8037 | 0.8051 | 0.8168 | 0.8345 |
+| nus-wide@5000 | 0.6485 | 0.6802 | 0.6951 | 0.6982 |
+
