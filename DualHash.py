@@ -123,8 +123,8 @@ def get_config(dataset_choice="cifar-10"):
         },
         
         # hardware parameters
-        "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-        # "device": torch.device("mps"), 
+        # "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+        "device": torch.device("mps"), 
         
         # hash bit number
         "bit_list": [64,48,32,16],
