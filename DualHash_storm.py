@@ -270,7 +270,6 @@ def train_val(config, bit):
         
         if (epoch + 1) % config["log_interval"] == 0:
             writer.add_scalar('Loss/train', train_loss, epoch)
-            writer.add_scalar('Loss/quan', train_quan_loss, epoch)
             writer.add_scalar('mAP/val', mAP, epoch)
             writer.add_scalar('AP_topK/val', AP_topK, epoch)
             writer.add_scalar('AP_r/val', AP_r, epoch)
