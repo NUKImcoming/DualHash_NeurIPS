@@ -160,10 +160,45 @@ class NusWideDatasetTC21(Dataset):
         return torch.from_numpy(self.targets).float()
     
 def nus_wide_dataset(config):
-
+    #  check images directory
+    image_dir = os.path.join('data/nus-wide', 'images')
+    if not os.path.exists(image_dir):
+        try:
+            os.makedirs(image_dir, exist_ok=True)
+            print(f"Created images directory at {image_dir}")
+        except Exception as e:
+            print(f"Error creating directory: {e}")
     
+    #  read one image index, for checking
+    sample_img_path = None
+    try:
+        with open(os.path.join('data/nus-wide', 'train_img.txt'), 'r') as f:
+            first_line = f.readline().strip()
+            if first_line:
+                sample_img_path = os.path.join('data/nus-wide', first_line)
+    except Exception as e:
+        print(f"Error reading image index file: {e}")
+    
+    #  check if image exists
+    images_exist = False
+    if sample_img_path and os.path.exists(sample_img_path):
+        images_exist = True
+    
+    if not images_exist:
+        print("\n" + "="*80)
+        print("WARNING: NUS-WIDE dataset images not found!")
+        print("The code will attempt to run but will fail when trying to load images.")
+        print("\nTo use the NUS-WIDE dataset, please:")
+        print("1. Download the dataset from: https://lms.comp.nus.edu.sg/wp-content/uploads/2019/research/nuswide/NUS-WIDE.html")
+        print("2. Extract images to: data/nus-wide/images/")
+        print("3. Ensure image paths in txt files match your directory structure")
+        print("="*80 + "\n")
+        
+        #  delay failure, let user see error message
+        print("Continuing with NUS-WIDE dataset setup (will fail when loading images)...")
+
     train_dataset = NusWideDatasetTC21(
-        root='NUS-WIDE/',
+        root='data/nus-wide',
         img_txt='train_img.txt',
         label_txt='train_label_onehot.txt',
         transform=train_transform(),
@@ -171,7 +206,7 @@ def nus_wide_dataset(config):
     )
     
     valid_dataset = NusWideDatasetTC21(
-    root='NUS-WIDE/',
+    root='data/nus-wide',
     img_txt='valid_img.txt',
     label_txt='valid_label_onehot.txt',
     transform=train_transform(),
@@ -179,7 +214,7 @@ def nus_wide_dataset(config):
     )
     
     test_dataset = NusWideDatasetTC21(
-        root='NUS-WIDE/',
+        root='data/nus-wide', 
         img_txt='test_img.txt',
         label_txt='test_label_onehot.txt',
         transform=query_transform(),
@@ -208,7 +243,7 @@ def nus_wide_dataset(config):
     )
     
     
-    # # 初始化计数器
+    # initialize counters
     num_train = len(train_dataset.data)
     num_test = len(test_dataset.data)
     num_valid = len(valid_dataset.data)
@@ -239,64 +274,122 @@ def CalcHammingDist(B1, B2):
     distH = 0.5 * (q - np.dot(B1, B2.transpose()))
     return distH
 
-# mAP, topk=-1
-def hash_ranking_map(retrieval_codes, retrieval_labels, query_codes, query_labels):
-    num_query = query_codes.shape[0]
-    mAP = 0.0
+# # mAP, topk=-1 For cifar10
+# def hash_ranking_map(retrieval_codes, retrieval_labels, query_codes, query_labels):
+#     num_query = query_codes.shape[0]
+#     mAP = 0.0
 
+#     # 计算地面真实标签矩阵
+#     ground_truth = (np.dot(query_labels, retrieval_labels.T) > 0).astype(np.float32)
+#     # 计算汉明距离
+#     hamming_dist = CalcHammingDist(query_codes, retrieval_codes)
+#     # 对汉明距离进行排序，获得索引
+#     sorted_indices = np.argsort(hamming_dist, axis=1)
+#     count_valid_query = 0
+
+#     for i in range(num_query):
+#         gnd = ground_truth[i]
+#         relevant_num = np.sum(gnd).astype(int)
+#         if relevant_num == 0:
+#             continue
+#         gnd = gnd[sorted_indices[i]]
+#         pos_score = np.linspace(1, relevant_num, relevant_num)
+#         relevant_indices = np.nonzero(gnd)[0].astype(np.float32) + 1
+#         mAP += np.mean(pos_score / relevant_indices)
+#         count_valid_query += 1
+
+#     if count_valid_query != 0:
+#         mAP /= count_valid_query
+#     else:
+#         print(f"查询集的有效检索数为{count_valid_query}，请检查模型或数据集")
+
+#     return mAP
+
+# # for nus-wide
+# def hash_ranking_map_topk(retrieval_codes, retrieval_labels, query_codes, query_labels, topk=5000):
+#     num_query = query_labels.shape[0]
+#     num_gallery = retrieval_labels.shape[0]
+#     topkmap = 0
+
+#     for iter in range(num_query):
+#         gnd = (np.dot(query_labels[iter, :], retrieval_labels.transpose()) > 0).astype(np.float32)
+#         hamm = CalcHammingDist(query_codes[iter, :], retrieval_codes)
+#         ind = np.argsort(hamm)
+#         gnd = gnd[ind]
+
+#         tgnd = gnd[0:topk]
+#         tsum = np.sum(tgnd).astype(int)
+#         if tsum == 0:
+#             continue
+#         count = np.linspace(1, tsum, tsum)
+
+#         tindex = np.asarray(np.where(tgnd == 1)) + 1.0
+#         topkmap_ = np.mean(count / (tindex))
+#         topkmap = topkmap + topkmap_
+
+#     topkmap = topkmap / num_query
+
+#     return topkmap
+
+
+def hash_ranking_map(retrieval_codes, retrieval_labels, query_codes, query_labels, topk=-1, dataset_type="cifar-10"):
+
+    num_query = query_codes.shape[0]
+    num_gallery = retrieval_codes.shape[0]
+    
+    # 考虑数据集特点决定是否使用topk
+    if dataset_type.lower() == "nus-wide":
+        # NUS-WIDE使用topk，默认5000
+        if topk <= 0:
+            topk = 5000
+    else:
+        # CIFAR-10默认使用全部结果
+        if topk <= 0:
+            topk = num_gallery
+    
+    # 限制topk不超过检索集大小
+    topk = min(topk, num_gallery)
+    
     # 计算地面真实标签矩阵
     ground_truth = (np.dot(query_labels, retrieval_labels.T) > 0).astype(np.float32)
-    # 计算汉明距离
+    
+    # 预计算全部汉明距离并排序 (CIFAR-10风格，更高效)
     hamming_dist = CalcHammingDist(query_codes, retrieval_codes)
-    # 对汉明距离进行排序，获得索引
     sorted_indices = np.argsort(hamming_dist, axis=1)
+    
+    mAP = 0.0
     count_valid_query = 0
-
+    
     for i in range(num_query):
-        gnd = ground_truth[i]
-        relevant_num = np.sum(gnd).astype(int)
-        if relevant_num == 0:
+        # 获取排序后的相关性
+        gnd = ground_truth[i][sorted_indices[i]]
+        
+        # 只考虑前topk个结果
+        tgnd = gnd[:topk]
+        tsum = np.sum(tgnd).astype(int)
+        
+        # 如果没有相关项，跳过
+        if tsum == 0:
             continue
-        gnd = gnd[sorted_indices[i]]
-        pos_score = np.linspace(1, relevant_num, relevant_num)
-        relevant_indices = np.nonzero(gnd)[0].astype(np.float32) + 1
-        mAP += np.mean(pos_score / relevant_indices)
+            
+        # 为相关项分配分数
+        count = np.linspace(1, tsum, tsum)
+        
+        # 找出相关项位置
+        relevant_indices = np.nonzero(tgnd)[0].astype(np.float32) + 1
+        
+        # 计算当前查询的AP
+        query_map = np.mean(count / relevant_indices)
+        mAP += query_map
         count_valid_query += 1
-
+    
+    # 计算平均值
     if count_valid_query != 0:
         mAP /= count_valid_query
     else:
         print(f"查询集的有效检索数为{count_valid_query}，请检查模型或数据集")
-
+    
     return mAP
-
-
-def hash_ranking_map_topk(retrieval_codes, retrieval_labels, query_codes, query_labels, topk=5000):
-    num_query = query_labels.shape[0]
-    num_gallery = retrieval_labels.shape[0]
-    topkmap = 0
-
-    for iter in range(num_query):
-        gnd = (np.dot(query_labels[iter, :], retrieval_labels.transpose()) > 0).astype(np.float32)
-        hamm = CalcHammingDist(query_codes[iter, :], retrieval_codes)
-        ind = np.argsort(hamm)
-        gnd = gnd[ind]
-
-        tgnd = gnd[0:topk]
-        tsum = np.sum(tgnd).astype(int)
-        if tsum == 0:
-            continue
-        count = np.linspace(1, tsum, tsum)
-
-        tindex = np.asarray(np.where(tgnd == 1)) + 1.0
-        topkmap_ = np.mean(count / (tindex))
-        topkmap = topkmap + topkmap_
-
-    topkmap = topkmap / num_query
-
-    return topkmap
-
-
 
 # faster but more memory
 def CalcTopMapWithPR(qB, queryL, rB, retrievalL, topk):

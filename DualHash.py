@@ -265,7 +265,7 @@ def train_val(config, bit):
         
         trn_binary, trn_label = compute_result(train_loader, net, device=device)
         
-        mAP = hash_ranking_map_topk(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), val_binary.cpu().numpy(), val_label.cpu().numpy(), topk=config["topK_mAP"])
+        mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), val_binary.cpu().numpy(), val_label.cpu().numpy(), topk=config["topK_mAP"], dataset_type=config["dataset"])
         AP_topK, _ = get_precision_recall_topK(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), val_binary.cpu().numpy(), val_label.cpu().numpy(), topk=config["topK"])
         AP_r, _ = get_precision_recall_within_hamming_radius(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), val_binary.cpu().numpy(), val_label.cpu().numpy(), r=config["r"])
         
@@ -280,7 +280,7 @@ def train_val(config, bit):
             Best_mAP = mAP
             print("-----------------testing-----------------")
             tst_binary, tst_label = compute_result(test_loader, net, device=device)
-            tst_mAP = hash_ranking_map_topk(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), tst_binary.cpu().numpy(), tst_label.cpu().numpy(), topk=config["topK_mAP"])
+            tst_mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), tst_binary.cpu().numpy(), tst_label.cpu().numpy(), topk=config["topK_mAP"], dataset_type=config["dataset"])
             tst_results.append(tst_mAP)
             tst_AP_topK, _ = get_precision_recall_topK(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), tst_binary.cpu().numpy(), tst_label.cpu().numpy(), topk=config["topK"])
             tst_results.append(tst_AP_topK)
@@ -330,6 +330,16 @@ def train_val(config, bit):
     np.save(os.path.join(save_path, "time.npy"), training_times)
       
 if __name__ == "__main__":
-    config = get_config()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='cifar-10', 
+                        choices=['cifar-10', 'nus-wide'],
+                        help='Dataset to use: cifar-10 or nus-wide')
+    args = parser.parse_args()
+    
+    config = get_config(args.dataset)
+    print(f"Using dataset: {args.dataset}")
+
     for bit in config["bit_list"]:
         train_val(config, bit)
