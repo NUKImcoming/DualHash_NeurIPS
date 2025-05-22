@@ -102,7 +102,7 @@ def get_config(dataset_choice="cifar-10"):
         
         # training parameters
         "training_params": {
-            "epoch": 200,
+            "epoch": 300,
             "save_epoch_start": 70,
             "step_num": 10, 
             "dcc": 1,  # 1~5
