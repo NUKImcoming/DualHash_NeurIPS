@@ -11,254 +11,6 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 
 
-class MyCIFAR10(dsets.CIFAR10):
-    def __getitem__(self, index):
-        img, target = self.data[index], self.targets[index]
-        img = Image.fromarray(img)
-        img = self.transform(img)
-        target = np.eye(10, dtype=np.int8)[np.array(target)]
-        return img, target, index
-
-
-def cifar_dataset(config):
-    batch_size = config["batch_size"]
-
-    train_size = 1000
-    test_size = 500
-    valid_size = 500 
-
-    transform = transforms.Compose([
-        transforms.Resize(config["crop_size"]),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
-    
-    cifar_dataset_root = 'data/cifar-10'
-
-    # Dataset
-    train_dataset = MyCIFAR10(root=cifar_dataset_root,
-                              train=True,
-                              transform=transform,
-                              download=True)
-
-    test_dataset = MyCIFAR10(root=cifar_dataset_root,
-                             train=False,
-                             transform=transform)
-    
-    valid_dataset = MyCIFAR10(root=cifar_dataset_root,
-                              train=True,
-                              transform=transform,
-                              download=True)
-    
-    # Concatenate data and labels from both train and test sets
-    X = np.concatenate((train_dataset.data, test_dataset.data))
-    L = np.concatenate((np.array(train_dataset.targets), np.array(test_dataset.targets)))
-
-
-    if os.path.exists('data/cifar-10/train_index.npy') and os.path.exists('data/cifar-10/test_index.npy') and os.path.exists('data/cifar-10/valid_index.npy'):
-        # Load saved indices
-        print("Load saved indices!")
-        train_index = np.load('data/cifar-10/train_index.npy')
-        test_index = np.load('data/cifar-10/test_index.npy')
-        valid_index = np.load('data/cifar-10/valid_index.npy')
-    else:
-        print("First Load indices!")
-        train_index = []
-        test_index = []
-        valid_index = []
-
-        for label in range(10):
-            index = np.where(L == label)[0]
-
-            # Shuffle the indices
-            np.random.shuffle(index)
-
-            # Split indices for train, valid, and test sets
-            train_index.extend(index[:train_size])
-            valid_index.extend(index[train_size:train_size + valid_size])
-            test_index.extend(index[train_size + valid_size:train_size + valid_size + test_size])
-
-        # Convert lists to numpy arrays
-        train_index = np.array(train_index)
-        test_index = np.array(test_index)
-        valid_index = np.array(valid_index)
-
-        # Save the indices for future use
-        np.save('data/cifar-10/train_index.npy', train_index)
-        np.save('data/cifar-10/test_index.npy', test_index)
-        np.save('data/cifar-10/valid_index.npy', valid_index)
-
-    # Assign data and targets to corresponding datasets
-    train_dataset.data = X[train_index]
-    train_dataset.targets = L[train_index]
-    test_dataset.data = X[test_index]
-    test_dataset.targets = L[test_index]
-    valid_dataset.data = X[valid_index]
-    valid_dataset.targets = L[valid_index]
-
-    # Create DataLoaders
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                              batch_size=batch_size,
-                              shuffle=True,
-                              num_workers=4)
-
-    test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
-                             batch_size=batch_size,
-                             shuffle=False,
-                             num_workers=4)
-
-    valid_loader = torch.utils.data.DataLoader(dataset=valid_dataset,
-                              batch_size=batch_size,
-                              shuffle=False,
-                              num_workers=4)
-
-    return train_loader, test_loader, valid_loader, \
-           train_index.shape[0], test_index.shape[0], valid_index.shape[0]
-
-
-class NusWideDatasetTC21(Dataset):
-    """
-    Nus-wide dataset, 21 classes.
-
-    Args
-        root(str): Path of image files.
-        img_txt(str): Path of txt file containing image file name.
-        label_txt(str): Path of txt file containing image label.
-        transform(callable, optional): Transform images.
-        train(bool, optional): Return training dataset.
-        num_train(int, optional): Number of training data.
-    """
-    def __init__(self, root, img_txt, label_txt, transform=None, train=None):
-        self.root = root
-        self.transform = transform
-
-        img_txt_path = os.path.join(root, img_txt)
-        label_txt_path = os.path.join(root, label_txt)
-
-        # Read files
-        with open(img_txt_path, 'r') as f:
-            self.data = np.array([i.strip() for i in f])
-        self.targets = np.loadtxt(label_txt_path, dtype=np.float32)
-
-        # # Sample training dataset
-        # if train is True:
-        #     perm_index = np.random.permutation(len(self.data))[:num_train]
-        #     self.data = self.data[perm_index]
-        #     self.targets = self.targets[perm_index]
-
-    def __getitem__(self, index):
-        img = Image.open(os.path.join(self.root, self.data[index])).convert('RGB')
-        if self.transform is not None:
-            img = self.transform(img)
-
-        return img, self.targets[index], index
-
-    def __len__(self):
-        return len(self.data)
-
-    def get_onehot_targets(self):
-        return torch.from_numpy(self.targets).float()
-    
-def nus_wide_dataset(config):
-    #  check images directory
-    image_dir = os.path.join('data/nus-wide', 'images')
-    if not os.path.exists(image_dir):
-        try:
-            os.makedirs(image_dir, exist_ok=True)
-            print(f"Created images directory at {image_dir}")
-        except Exception as e:
-            print(f"Error creating directory: {e}")
-    
-    #  read one image index, for checking
-    sample_img_path = None
-    try:
-        with open(os.path.join('data/nus-wide', 'train_img.txt'), 'r') as f:
-            first_line = f.readline().strip()
-            if first_line:
-                sample_img_path = os.path.join('data/nus-wide', first_line)
-    except Exception as e:
-        print(f"Error reading image index file: {e}")
-    
-    #  check if image exists
-    images_exist = False
-    if sample_img_path and os.path.exists(sample_img_path):
-        images_exist = True
-    
-    if not images_exist:
-        print("\n" + "="*80)
-        print("WARNING: NUS-WIDE dataset images not found!")
-        print("The code will attempt to run but will fail when trying to load images.")
-        print("\nTo use the NUS-WIDE dataset, please:")
-        print('1. Download the dataset from: "https://pan.baidu.com/s/1f9mKXE2T8XpIq8p7y8Fa6Q"')
-        print("2. Extract images to: data/nus-wide/images/")
-        print("3. Ensure image paths in txt files match your directory structure")
-        print("="*80 + "\n")
-        
-        #  delay failure, let user see error message
-        print("Continuing with NUS-WIDE dataset setup (will fail when loading images)...")
-
-    train_dataset = NusWideDatasetTC21(
-        root='data/nus-wide',
-        img_txt='train_img.txt',
-        label_txt='train_label_onehot.txt',
-        transform=train_transform(),
-        train=True
-    )
-    
-    valid_dataset = NusWideDatasetTC21(
-    root='data/nus-wide',
-    img_txt='valid_img.txt',
-    label_txt='valid_label_onehot.txt',
-    transform=train_transform(),
-    train=True
-    )
-    
-    test_dataset = NusWideDatasetTC21(
-        root='data/nus-wide', 
-        img_txt='test_img.txt',
-        label_txt='test_label_onehot.txt',
-        transform=query_transform(),
-    )
-    
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=config["batch_size"],
-        pin_memory=True,
-        num_workers=4
-    )
-    
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=config["batch_size"],
-        shuffle=True,
-        pin_memory=True,
-        num_workers=4
-    )
-    
-    valid_dataloader = DataLoader(
-    valid_dataset,
-    batch_size=config["batch_size"],
-    pin_memory=True,
-    num_workers=4
-    )
-    
-    
-    # initialize counters
-    num_train = len(train_dataset.data)
-    num_test = len(test_dataset.data)
-    num_valid = len(valid_dataset.data)
-    
-    
-    return train_dataloader, test_dataloader,  valid_dataloader, num_train, num_test, num_valid
-
-
-def get_data(config):
-    
-    if config["dataset"] == "cifar-10":
-        return cifar_dataset(config)
-    elif config["dataset"] == "nus-wide":
-        return nus_wide_dataset(config)
-
 
 def compute_result(dataloader, net, device):
     bs, clses = [], []
@@ -629,3 +381,35 @@ def initialize_B_with_ITQ(train_loader, net, bit, device, n_iter=50):
             B[i, rand_perm[half_point:]] = -1
             
         return B
+    
+def initialize_B_from_MDSHC_centers(train_loader, bit, device, centers_path="./data/centers_100_32.npy"):
+ 
+    mdshc_centers = np.load(centers_path)
+    mdshc_centers = torch.from_numpy(mdshc_centers).float().to(device)
+    
+    num_samples = len(train_loader.dataset)
+    B = torch.zeros(bit, num_samples).to(device)
+    
+    for _, label, ind in tqdm(train_loader, desc="B矩阵初始化"):
+        label = label.to(device)
+        for i, idx in enumerate(ind):
+            # one-hot转类别ID
+            class_id = torch.argmax(label[i]).item()
+            B[:, idx] = mdshc_centers[class_id, :]
+    
+    print(f"B矩阵初始化完成，使用MDSHC中心")
+    return B
+
+def detect_plateau_and_adjust_lr(optimizer, train_losses, epoch, patience=5, factor=10):
+    if len(train_losses) < patience:
+        return False
+    
+    # 看最近5轮loss是否几乎不变
+    recent_losses = train_losses[-patience:]
+    improvement = recent_losses[0] - recent_losses[-1]  # 首尾差值
+    
+    if improvement < 1e-4:  # 改善太小
+        # 提高学习率跳出停滞
+        for param_group in optimizer.param_groups:
+            param_group['lr'] *= factor
+        return True

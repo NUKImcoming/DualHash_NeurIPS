@@ -2,16 +2,15 @@ import numpy as np
 import torch
 import time
 import torch.optim as optim
-from network import AlexNet, ResNet50, ResNet50_v2
-from sgd_tools import *
-from data.datasets import *
+from networks import create_network  # 使用新的统一网络接口
+from data.datasets import get_data  
 import os
 from Optimizer_B_lambda import *
 import lr_schedule
 from tqdm import tqdm
 import math
 from torch.utils.tensorboard import SummaryWriter
-from config import create_dualhash_config, create_storm_config, setup_seed
+from config import * 
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -34,6 +33,8 @@ class DualHashLoss(torch.nn.Module):
         loss = likelihood_loss + config["eta"] * quan_loss + config["lambda"] * ncvx_regu_loss
         return loss
 
+
+
 def train_val(config, bit):
     log_dir = os.path.join(config["log_dir"], f"{config['dataset']}_{bit}bits")
     writer = SummaryWriter(log_dir=log_dir)
@@ -47,39 +48,22 @@ def train_val(config, bit):
     
     print(f"Network: {config['info']}, Dataset: {config['dataset']}, Bits: {bit}")
     
-    # 根据网络类型创建网络
-    if config["net_class"] == "AlexNet":
-        net = AlexNet(config["info"], config["hidden_dim"], bit, config["beta"]).to(device)
-    elif config["net_class"] == "ResNet50":
-        net = ResNet50(config["info"], config["hidden_dim"], bit, config["beta"]).to(device)
-    elif config["net_class"] == "ResNet50_v2":
-        net = ResNet50_v2(config["info"], config["hidden_dim"], bit, config["beta"]).to(device)
-    else:
-        raise ValueError(f"Unsupported network class: {config['net_class']}")
+   
+    net = create_network(
+        network_type=config["net_class"].lower().replace('net', ''),  # 'alexnet' or 'resnet50'
+        info=config["info"],
+        hidden_dim=config["hidden_dim"],
+        hash_bits=bit,
+        beta=config["beta"],
+        use_tanh=True,
+        pretrained=True
+    ).to(device)
     
-    # 使用配置中的学习率设置
-    parameter_list = [
-        {"params": net.feature_layers.parameters(), "lr": config["feature_lr"]},
-        {"params": net.hash_layers.parameters(), "lr": config["hash_lr"]}
-    ]
     
-    optimizer_config = config["optimizer"]
-    optimizer = optimizer_config["type"](parameter_list, **(config["optimizer"]["optim_params"]))
-    
-    param_lr = []
-    layers = ["feature_layers", "hash_layers"]
-    for param_group in optimizer.param_groups:
-        param_lr.append(param_group["lr"])
-    
-    config["Network_init_lr"] = dict(zip(layers, param_lr))
-    config["max_iter"] = config["epoch"] * config["batch_num"] 
-    optimizer_config["lr_param"]["step"] = math.ceil(config["max_iter"] / config["step_num"])
-    schedule_param = optimizer_config["lr_param"]
-    lr_scheduler = lr_schedule.schedule_dict[config["optimizer"]["lr_type"]]
-    
+    optimizer, lr_scheduler, schedule_param, param_lr = setup_training_components(net, config)
     criterion = DualHashLoss(config)
     
-    # 使用MDSHC中心初始化B矩阵
+    # 使用新的初始化方法
     B = initialize_B_from_MDSHC_centers(train_loader, bit, device)
     U = torch.zeros(bit, num_train).to(device)
     Z = torch.zeros(bit, num_train).to(device)
@@ -133,9 +117,16 @@ def train_val(config, bit):
             val_binary, val_label = compute_result(valid_loader, net, device=device)
             trn_binary, trn_label = compute_result(train_loader, net, device=device)
             
-            mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
-                                 val_binary.cpu().numpy(), val_label.cpu().numpy(), 
-                                 topk=config["topK_mAP"], dataset_type=config["dataset"])
+            # 使用统一的评估函数
+            if config["dataset"] == "nus-wide":
+                mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
+                                     val_binary.cpu().numpy(), val_label.cpu().numpy(), 
+                                     topk=config["topK_mAP"], dataset_type=config["dataset"])
+            else:
+                mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
+                                     val_binary.cpu().numpy(), val_label.cpu().numpy(), 
+                                     dataset_type=config["dataset"])
+                                     
             AP_topK, _ = get_precision_recall_topK(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
                                                  val_binary.cpu().numpy(), val_label.cpu().numpy(), 
                                                  topk=config["topK"])
@@ -155,9 +146,16 @@ def train_val(config, bit):
                 tst_results = []
                 Best_mAP = mAP
                 tst_binary, tst_label = compute_result(test_loader, net, device=device)
-                tst_mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
-                                         tst_binary.cpu().numpy(), tst_label.cpu().numpy(), 
-                                         topk=config["topK_mAP"], dataset_type=config["dataset"])
+                
+                if config["dataset"] == "nus-wide":
+                    tst_mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
+                                             tst_binary.cpu().numpy(), tst_label.cpu().numpy(), 
+                                             topk=config["topK_mAP"], dataset_type=config["dataset"])
+                else:
+                    tst_mAP = hash_ranking_map(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
+                                             tst_binary.cpu().numpy(), tst_label.cpu().numpy(), 
+                                             dataset_type=config["dataset"])
+                                             
                 tst_results.append(tst_mAP)
                 tst_AP_topK, _ = get_precision_recall_topK(trn_binary.cpu().numpy(), trn_label.cpu().numpy(), 
                                                          tst_binary.cpu().numpy(), tst_label.cpu().numpy(), 
@@ -209,7 +207,15 @@ def train_val(config, bit):
     np.save(os.path.join(save_path, "time.npy"), training_times)
     
     return tst_mAP, tst_AP_topK, tst_AP_r
-      
+
+def compute_result(dataloader, net, device):
+    bs, clses = [], []
+    net.eval()
+    for img, cls, _ in tqdm(dataloader):
+        clses.append(cls)
+        bs.append((net(img.to(device))).data.cpu())
+    return torch.cat(bs).sign(), torch.cat(clses)
+
 if __name__ == "__main__":
     import argparse
 
@@ -224,7 +230,7 @@ if __name__ == "__main__":
                         help='Hash bit lengths to test')
     args = parser.parse_args()
     
-    # 使用config.py中的配置函数
+    # 使用新的配置函数
     config = create_dualhash_config(args.dataset, args.network)
     config["bit_list"] = args.bits
     
