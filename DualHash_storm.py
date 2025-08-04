@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from network import *
+from networks import *
 import time
 from sgd_tools import *
 import os
